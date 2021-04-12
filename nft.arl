@@ -31,7 +31,7 @@ entry update_operators (upl : list<or<operator_param, operator_param>>) {
     match up with
     | left(param)  -> (* add *)
       dorequire(ledger[param.opp_token_id].lowner = source, "CALLER NOT OWNER");
-      operator.addupdate((param.opp_operator, param.opp_token_id, param.opp_owner), {})
+      operator.add({param.opp_operator; param.opp_token_id; param.opp_owner})
     | right(param) -> (* remove *)
       dorequire(ledger[param.opp_token_id].lowner = source, "CALLER NOT OWNER");
       operator.remove((param.opp_operator, param.opp_token_id, param.opp_owner))
