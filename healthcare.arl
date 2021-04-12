@@ -1,0 +1,98 @@
+archetype health_care(
+  patient       : address,
+  insurer       : address,
+  fee           : tez,
+  fee_period    : duration,
+  deductible    : tez,
+)
+
+variable last_fee_date : date = now
+
+variable patient_confirmed : bool = false
+variable insurer_confirmed : bool = false
+
+variable deductible_debt : tez = 0tz
+
+asset doctor {
+  addr : address;
+  debt : tez = 0tz;
+}
+
+states =
+| Created   initial
+| Running
+| Canceled
+
+transition toRunning () {
+  called by selfaddress
+  from Created to Running
+  with effect { last_fee_date := now }
+}
+
+entry confirm() {
+  if caller = patient then patient_confirmed := true;
+  if caller = insurer then insurer_confirmed := true;
+  if patient_confirmed and insurer_confirmed then
+    transfer 0tz to entry self.toRunning()
+}
+
+transition cancel () {
+  called by insurer or patient
+  from any to Canceled
+}
+
+entry register_doctor (a : address) {
+  called by patient
+  require { r1 : state = Running; }
+  effect  { doctor.add ({ addr = a }) }
+}
+
+entry declare_consultation (p : tez) {
+  require {
+     r2 : state = Running;
+     r3 : doctor.contains(caller);
+  }
+  effect {
+    doctor.update(caller, { debt += p });
+    deductible_debt += min(p, deductible)
+  }
+}
+
+(* Payment from Insurance to Doctor *)
+
+entry pay_doctor (doc : address) {
+  called by insurer
+  require { r4 : state = Running }
+  effect {
+    var decrease : tez = min(transferred, doctor[doc].debt);
+    transfer decrease to doc;
+    transfer (transferred - decrease) to insurer;
+    doctor.update (doc, { debt -= decrease })
+  }
+}
+
+(* Payments from Patient to Insuance *)
+
+entry pay_fees () {
+  called by patient
+  require { r5 : state = Running }
+  effect {
+    var nb_periods : int = (now - last_fee_date) div fee_period;
+    var due = nb_periods * fee;
+    var decrease : tez = min (transferred, due);
+    transfer decrease to insurer;
+    transfer (transferred - decrease) to patient;
+    last_fee_date += nb_periods * fee_period
+  }
+}
+
+entry pay_deductibles () {
+  called by patient
+  require { r6 : state = Running; }
+  effect {
+    var decrease : tez = min (transferred, deductible_debt);
+    transfer decrease to insurer;
+    transfer (transferred - decrease) to patient;
+    deductible_debt -= decrease
+  }
+}

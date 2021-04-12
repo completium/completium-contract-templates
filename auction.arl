@@ -1,0 +1,157 @@
+
+archetype auction(
+  nftoken     : address,
+  auction_dur : duration,
+  dur_incr    : duration
+)
+
+asset nft {
+  nftid      : nat;
+  owner      : address;
+  bestbidder : option<address>;
+  best       : tez;
+  endofbid   : date;
+}
+
+record operator_param {
+  opp_owner    : address;
+  opp_operator : address;
+  opp_token_id : nat
+} as ((owner, (operator, token_id)))
+
+record balance_of_request {
+  bo_owner : address;
+  btoken_id : nat;
+} as ((owner, token_id))
+
+record balance_of_response {
+  request : balance_of_request;
+  balance_ : nat;
+} as ((request, balance))
+
+function get_addop_param(
+  powner : address,
+  popp   : address,
+  pid    : nat
+) : list<or<operator_param, operator_param>> {
+  return ([
+    left<operator_param>({
+      opp_owner    = powner;
+      opp_operator = popp;
+      opp_token_id = pid
+    })
+  ])
+}
+
+entry check_ownership(brl : list<balance_of_response>) {
+  called by nftoken
+  effect {
+    match brl with
+    | hd::tl -> begin
+      dorequire(hd.balance_ = 1, "Caller Is Not Owner");
+      transfer 0tz to nftoken
+        call update_operators<list<or<operator_param, operator_param>>>(
+          get_addop_param(hd.request.bo_owner, selfaddress, hd.request.btoken_id));
+    end
+    | []     -> fail("Empty Response")
+    end
+  }
+}
+
+entry upforsale (id : nat, price : tez) {
+  require {
+    r1: if nft.contains(id) then nft[id].endofbid < now else true
+  }
+  effect {
+    nft.addupdate(id, {
+      owner      = caller;
+      bestbidder = none;
+      best       = price;
+      endofbid   = (now + auction_dur)
+    });
+    (* check ownership with FA2 balance_of *)
+    transfer 0tz to nftoken
+       call balance_of<
+              list<balance_of_request> *
+              contract<list<balance_of_response>>
+       >(([ { bo_owner = caller; btoken_id = id } ], self.check_ownership));
+  }
+}
+
+entry bid (id : nat) {
+  require {
+    r2 otherwise "No Auction"   : now < nft[id].endofbid;
+    r3 otherwise "Not Best Bid" :
+      if issome(nft[id].bestbidder)
+      then transferred >  nft[id].best
+      else transferred >= nft[id].best;
+  }
+  effect {
+    match nft[id].bestbidder with
+    | none -> ()
+    | some bidder -> transfer nft[id].best to bidder
+    end;
+    nft.update(id, {
+      bestbidder = some(caller);
+      best       = transferred;
+      endofbid  +=
+        (if nft[id].endofbid - now < dur_incr
+         then dur_incr
+         else 0s)
+    })
+  }
+}
+
+record transfer_destination {
+  to_dest           : address;
+  token_id_dest     : nat;
+  token_amount_dest : nat
+} as ((to_, (token_id, amount)))
+
+function get_transfer_param(
+  %from : address,
+  %to   : address,
+  id    : nat) : list<address * list<transfer_destination>> {
+  return ([
+    (%from, [{
+      to_dest           = %to;
+      token_id_dest     = id;
+      token_amount_dest = 1
+    }])
+  ])
+}
+
+function get_rmop_param(
+  powner : address,
+  popp   : address,
+  pid    : nat
+) : list<or<operator_param, operator_param>> {
+  return ([
+    right<operator_param>({
+      opp_owner    = powner;
+      opp_operator = popp;
+      opp_token_id = pid
+    })
+  ])
+}
+
+entry claim (id : nat) {
+  require {
+    r4 otherwise "Auction Is Still On" : nft[id].endofbid < now
+  }
+  effect {
+    transfer 0tz to nftoken
+      call update_operators<list<or<operator_param, operator_param>>>(
+        get_rmop_param(nft[id].owner, selfaddress, id));
+    match nft[id].bestbidder with
+    | none -> ()
+    | some bidder -> begin
+        transfer 0tz to nftoken
+          call %transfer<list<address * list<transfer_destination>>>(
+            get_transfer_param(nft[id].owner, bidder, id));
+        transfer nft[id].best to nft[id].owner;
+      end
+    end;
+    nft.remove(id);
+  }
+}

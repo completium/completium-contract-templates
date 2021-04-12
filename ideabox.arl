@@ -1,0 +1,69 @@
+archetype ideasbox(chairman : address, maxvotes : nat)
+
+states =
+| Activated initial
+| Terminated
+
+asset idea {
+  id       : nat;
+  title    : bytes;
+  desc     : bytes;
+  nbvotes  : nat = 0;
+  creation : date;
+  author   : address;
+}
+
+asset voter {
+  addr      : address;
+  remaining : nat = maxvotes;
+}
+
+asset selected {
+  sid : nat;
+}
+
+entry register (a_voter : address) {
+  called by chairman
+  require {
+    r0 : state = Activated;
+  }
+  effect { voter.add({ addr = a_voter }) }
+}
+
+entry add_idea(ititle : bytes, description : bytes) {
+  require {
+    r1 : state = Activated;
+  }
+  effect {
+    idea.add({
+            id = idea.count();
+      title = ititle;
+            desc = description;
+            creation = now;
+            author = caller
+        })
+  }
+}
+
+entry vote(n : nat, weight : nat) {
+  require {
+    r2 : voter.contains(caller);
+    r3 : voter[caller].remaining >= weight;
+    r4 : state = Activated;
+  }
+  effect {
+    voter[caller].remaining -= weight;
+    idea[n].nbvotes += weight;
+  }
+}
+
+transition terminate () {
+  called by chairman
+  from Activated
+  to Terminated
+  with effect {
+    for i in idea.select(the.nbvotes > maxvotes).sort(desc(nbvotes)).head(3) do
+        selected.add({i})
+    done
+  }
+}

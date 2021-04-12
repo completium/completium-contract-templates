@@ -1,0 +1,54 @@
+archetype escrow(
+seller       : role,
+buyer        : role,
+taxcollector : role,
+price        : tez,
+taxrate      : rational,
+securityrate : rational,
+)
+
+variable buyer_funded  : bool = false
+variable seller_funded : bool = false
+
+(* states *)
+states =
+ | Created initial
+ | Aborted
+ | Funded
+ | Completed
+
+transition abort () {
+  called by buyer or seller
+  from Created to Aborted
+}
+
+transition toFunded () {
+  called by selfaddress
+  from Created to Funded
+}
+
+entry fund () {
+  called by buyer or seller
+  effect {
+    if caller = buyer then begin
+      dorequire(transferred >= (1 + taxrate + securityrate) * price, "NOT_ENOUGH_FUND");
+      buyer_funded := true
+    end else if caller = seller then begin
+      dorequire(transferred >= securityrate * price, "NOT_ENOUGH_FUND");
+      seller_funded := true
+    end;
+    if buyer_funded and seller_funded then
+      transfer 0tz to entry self.toFunded()
+  }
+}
+
+transition complete () {
+  called by buyer
+  from Funded to Completed
+  with effect {
+    transfer ((1 + securityrate) * price) to seller;
+    transfer (securityrate * price)       to buyer;
+    if taxrate > 0 then
+      transfer (taxrate * price)          to taxcollector;
+  }
+}

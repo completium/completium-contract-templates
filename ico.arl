@@ -1,0 +1,142 @@
+archetype ico(owner : address, token : address)
+
+variable min_contribution : tez        = 0.1tz
+variable max_contribution_silver : tez = 10tz
+
+variable max_token_to_sell     : nat = 100_000_000
+variable exchange_rate_tez_tok : nat = 80 (* one tez is 80 tokens *)
+
+variable presales_cap : tez = 1800tz
+variable round1_cap   : tez = 3600tz
+
+variable nb_tok_sold   : nat = 0
+variable nb_tez_raised : tez = 0tz
+
+enum whitelist =
+| Silver
+| Gold
+
+asset contributor identified by id {
+   id           : address;
+   typ          : whitelist;
+   contribution : tez = 0tz;
+}
+
+enum gstate =
+| Init initial
+| PresaleRunning
+| PresaleFinished
+| Round1Running
+| Round1Finished
+| Round2Running
+| Round2Finished
+
+variable vstate : gstate = Init
+
+
+function is_running () : bool {
+  return
+    match vstate with
+    | PresaleRunning | Round1Running | Round2Running -> true
+    | _ -> false
+    end
+}
+
+function get_rate () : rational {
+  var coeff : rational =
+    match vstate with
+    | PresaleRunning  -> 1.2
+    | Round1Running   -> 1.1
+    | _               -> 1
+    end;
+  return (coeff * exchange_rate_tez_tok)
+}
+
+function get_remaining_tez_to_raise () : tez {
+  return
+    match vstate with
+    | PresaleRunning | PresaleFinished -> presales_cap - nb_tez_raised
+    | Round1Running  | Round1Finished  -> round1_cap - nb_tez_raised
+    | _ -> (((max_token_to_sell - nb_tok_sold) / exchange_rate_tez_tok) * 1tz)
+    end
+}
+
+function transition_to_finished () : gstate {
+  return
+    match vstate with
+    | PresaleRunning -> PresaleFinished
+    | Round1Running  -> Round1Finished
+    | Round1Finished -> Round2Running
+    | _              -> Round2Finished
+    end
+}
+
+entry register(a : address, t : whitelist) {
+  called by owner
+  require { r0 : vstate = Init }
+  effect { contributor.add({ id = a; typ = t }) }
+}
+
+entry startpresales() {
+  called by owner
+  require { r1 : vstate = Init }
+  effect { vstate := PresaleRunning }
+}
+
+entry startround1() {
+    called by owner
+    require { r2: vstate = PresaleFinished }
+    effect { vstate := Round1Running }
+}
+
+entry startround2() {
+    called by owner
+    require { r3: vstate = Round1Finished }
+    effect { vstate := Round2Running }
+}
+
+entry finishphase () {
+  called by owner
+  require { r4: is_running() }
+  effect { vstate := transition_to_finished() }
+}
+
+entry contribute () {
+  require {
+     c1 : contributor.contains(caller);
+     c2 : is_running ();
+     c3 : transferred >= min_contribution;
+  }
+  effect {
+    (* cap contribution to max_contrib if necessary *)
+    var contrib = transferred;
+    if    contributor[caller].typ = Silver
+      and contributor[caller].contribution + contrib >= max_contribution_silver
+    then contrib := max_contribution_silver - contributor[caller].contribution;
+    (* cap contribution to round cap if necessary *)
+    var remaining_tez : tez = get_remaining_tez_to_raise ();
+    if remaining_tez <= contrib
+    then (
+      contrib := remaining_tez;
+      vstate := transition_to_finished ()
+    );
+    (* convert contribution to nb of bcd tokens *)
+    var nb_tokens : nat = get_rate() * contrib;
+    (* transfer tokens to contributor *)
+    transfer 0tz to token
+        call %transfer<address * address * nat>((owner, caller, nb_tokens));
+    (* update ico stats *)
+    nb_tok_sold   += nb_tokens;
+    nb_tez_raised += contrib;
+    (* update caller's contribution *)
+    contributor[caller].contribution += contrib;
+    if contrib <= transferred
+    then transfer (transferred - contrib) to caller
+  }
+}
+
+entry collectraised () {
+    called by owner
+    require { r5: vstate = Round2Finished }
+    effect { transfer balance to owner }
+}

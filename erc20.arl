@@ -1,0 +1,47 @@
+archetype erc20(total : nat, onetoken: nat, const initialowner : address)
+
+asset allowance identified by owner spender {
+  owner     : address;
+  spender     : address;
+  amount      : nat;
+}
+
+asset ledger identified by holder {
+  holder     : address;
+  tokens     : nat = 0;
+} initialized by {
+  { holder = initialowner; tokens = total }
+}
+
+entry %transfer (%to : pkey<ledger>, value : nat) {
+  require {
+    d0 : ledger[caller].tokens >= value
+  }
+  effect {
+    ledger.addupdate(%to,  { tokens += value });
+    ledger.update(caller, { tokens -= value })
+  }
+}
+
+entry approve(ispender : address, value : nat) {
+  require {
+    d1 : ledger[caller].tokens >= value;
+  }
+  effect {
+    allowance.addupdate((caller, ispender), { amount = value });
+  }
+}
+
+entry transferFrom(%from : address, %to : address, value : nat) {
+  require {
+    d3: allowance[(%from,caller)].amount >= value;
+    d4: ledger[%from].tokens >= value
+  }
+  effect {
+    (* update allowance *)
+    allowance.update((%from,caller), { amount -=  value });
+    (* update token *)
+    ledger.addupdate(%to, { tokens += value });
+    ledger.update(%from,  { tokens -= value });
+  }
+}

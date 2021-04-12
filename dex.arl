@@ -1,0 +1,112 @@
+archetype dex(admin : address, initialminted : nat)
+
+constant fee     : rational = 0.003
+constant epsilon : nat      = 1
+
+asset token {
+  id        : string ;
+  addr      : address;
+  name      : string ;
+  xtzpool   : nat = 0;
+  tokpool   : nat = 0;
+  liqpool   : nat = 0;
+}
+
+asset liquidity identified by tokenid owner {
+  tokenid  : string ;
+  owner    : address;
+  liqt     : nat = 0;
+}
+
+entry registertoken (i : string, a : address, n : string) {
+  called by admin
+  failif { f1: i = "XTZ" }
+  effect { token.addupdate(i, { addr = a; name = n }); }
+}
+
+entry deletetoken (i : string) {
+  called by admin
+  effect { token.remove(i) }
+}
+
+function compute_qB(qA : nat, pA : nat, pB : nat) : rational {
+  var feeqA = (1 - fee) * qA;
+  return (pB * feeqA / (pA + feeqA))
+}
+
+entry exchange(tA : string, qA : nat, tB : string, qB : nat) {
+  require {
+    r0 otherwise "SRC_EQ_DST" : tA <> tB;
+  }
+  effect {
+    (* DEX receives *)
+    if tA = "XTZ" then begin
+      var pA = token[tB].xtzpool;
+      var pB = token[tB].tokpool;
+      var expected_qB = compute_qB(qA, pA, pB);
+      dorequire(abs(expected_qB - qB) <= epsilon, ("INVALID_B_AMOUNT", expected_qB));
+      var xtzin : nat = transferred;
+      dorequire(qA = xtzin, ("INVALID_A_AMOUNT", xtzin));
+      transfer 0tz to token[tB].addr
+        call %transfer<address * address * nat>((selfaddress, caller, qB));
+      token.update(tB, { xtzpool += xtzin; tokpool -= qB });
+    end else if tB = "XTZ" then begin
+      var pA = token[tA].tokpool;
+      var pB = token[tA].xtzpool;
+      var expected_qB = compute_qB(qA, pA, pB);
+      dorequire(abs(expected_qB - qB) <= epsilon, ("INVALID_B_AMOUNT", expected_qB));
+      transfer 0tz to token[tA].addr
+        call %transfer<address * address * nat>((caller, selfaddress, qA));
+      transfer (qB * 1utz) to caller;
+      token.update(tA, { xtzpool -= qB; tokpool += qA });
+    end else begin
+      var pA      = token[tA].tokpool;
+      var pXTZA   = token[tA].xtzpool;
+      var qXTZ    = abs(floor(compute_qB(qA, pA, pXTZA)));
+      var pXTZB   = token[tB].xtzpool;
+      var pB      = token[tB].tokpool;
+      var expected_qB = compute_qB(qXTZ, pXTZB, pB);
+      dorequire(abs(expected_qB - qB) <= epsilon, ("INVALID_B_AMOUNT", expected_qB));
+      transfer 0tz to token[tA].addr
+        call %transfer<address * address * nat>((caller, selfaddress, qA));
+      transfer 0tz to token[tB].addr
+        call %transfer<address * address * nat>((selfaddress, caller, qB));
+      token.update(tA, { xtzpool -= qXTZ; tokpool += qA });
+      token.update(tB, { xtzpool += qXTZ; tokpool -= qB });
+    end
+  }
+}
+
+entry addLiquidity(tA : string, qA : nat) {
+  (* transfer qA tokens tA to dex contract *)
+  transfer 0tz to token[tA].addr
+    call %transfer<address * address * nat>((caller, selfaddress, qA));
+  var xtzin : nat = transferred;
+  (* does qA tokens exchange for xtzin XTZ ? *)
+  var pA = token[tA].tokpool;
+  var pB = token[tA].xtzpool;
+  var expected_qB = compute_qB(qA, pA, pB);
+  dorequire(abs(expected_qB - xtzin) <= epsilon, ("INVALID_B_AMOUNT", expected_qB));
+  var mintedLiqT =
+    if token[tA].tokpool = 0
+    then initialminted
+    else abs(floor(token[tA].liqpool * xtzin / token[tA].xtzpool));
+  liquidity.addupdate((tA, caller), { liqt += mintedLiqT });
+  token.update(tA, { xtzpool += xtzin; tokpool += qA; liqpool += mintedLiqT })
+}
+
+entry removeLiquidity(tA : string, qL : nat) {
+  require {
+    r1 otherwise "NOT_ENOUGHT_LQT": qL <= liquidity[(tA, caller)].liqt
+  }
+  effect {
+    var liqratio = qL / token[tA].liqpool;
+    var xtzout = abs(floor(liqratio * token[tA].xtzpool));
+    transfer (xtzout * 1utz) to caller;
+    var qA = abs(floor(liqratio * token[tA].tokpool));
+    transfer 0tz to token[tA].addr
+      call %transfer<address * address * nat>((selfaddress, caller, qA));
+    liquidity.addupdate((tA, caller), { liqt -= qL });
+    token.update(tA, { xtzpool -= xtzout; tokpool -= qA; liqpool -= qL })
+  }
+}

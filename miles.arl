@@ -1,0 +1,60 @@
+archetype miles(admin : address)
+
+asset mile identified by id {
+   id         : string;
+   amount     : nat;
+   expiration : date
+}
+
+asset owner identified by addr {
+  addr  : role;
+  miles : partition<mile> = []
+}
+
+entry add (
+  ow        : address,
+  nm_id     : string,
+  nm_amount : nat,
+  nm_exp    : date) {
+   called by admin
+   failif {
+     c2 : mile.contains(nm_id);
+   }
+   effect {
+     owner.addupdate (ow, { miles += [{
+       id         = nm_id;
+       amount     = nm_amount;
+       expiration = nm_exp
+      }] })
+   }
+}
+
+entry consume (ow : address, quantity : nat) {
+  called by admin
+  effect {
+    var lview = owner[ow].miles.sort(expiration).select(the.expiration >= now);
+    dorequire (lview.sum(the.amount) >= quantity, "NotEnoughMiles");
+    var remainder = quantity;
+    for : loop m in lview do
+      if remainder > 0 then begin
+        if mile[m].amount > remainder then begin
+          mile.update(m, { amount -= remainder });
+          remainder := 0
+        end else if mile[m].amount = remainder then begin
+          remainder := 0;
+          owner[ow].miles.remove(m)
+        end else begin
+          remainder -= mile[m].amount;
+          owner[ow].miles.remove(m)
+        end
+      end
+    done;
+    assert p1
+  }
+}
+
+entry clear_expired () {
+  for : loop2 o in owner do
+    owner[o].miles.removeif(the.expiration < now)
+  done
+}
