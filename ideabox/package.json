@@ -1,0 +1,15 @@
+{
+  "name": "ideabox",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [],
+  "author": "completium",
+  "license": "ISC",
+  "dependencies": {
+    "@completium/completium-cli": "^0.1.11"
+  }
+}
