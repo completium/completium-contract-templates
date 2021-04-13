@@ -1,4 +1,4 @@
-FROM tqtezos/flextesa:latest
+FROM tqtezos/flextesa
 LABEL maintainer="contact@edukera.com"
 RUN sudo apt-get update && sudo apt-get -y install wget netbase
 RUN npm i @completium/completium-cli@0.1.12 -g
