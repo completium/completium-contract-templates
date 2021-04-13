@@ -20,5 +20,5 @@ github:
     addLabel: false
 vscode:
   extensions:
-    - edukera.archetype@0.38.0:BwtJ6rwGmyJfrcEVrjJcIA==
+    - edukera.archetype@latest
 
