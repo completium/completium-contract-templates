@@ -1,1 +1,3 @@
-# completium-contract-templates
+# Completium contract templates
+
+Presentation at [Completium](https://completium.com/docs/templates)
