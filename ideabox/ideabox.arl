@@ -1,4 +1,4 @@
-archetype ideasbox(chairman : address, maxvotes : nat)
+archetype ideabox(chairman : address, maxvotes : nat)
 
 states =
 | Activated initial
@@ -65,5 +65,86 @@ transition terminate () {
     for i in idea.select(the.nbvotes > maxvotes).sort(desc(nbvotes)).head(3) do
         selected.add({i})
     done
+  }
+}
+
+specification {
+  i1 : maxvotes * voter.count() = idea.sum(nbvotes) + voter.sum(remaining)
+}
+
+specification entry add_idea(ititle : bytes, description : bytes) {
+  fails {
+    add_idea_f1 with (msg : string) :
+      msg = "InvalidState" and
+      state <> Activated;
+    add_idea_f2 with (msg : string) :
+      msg = "KeyAlreadyExists" and
+      false;
+  }
+  postcondition add_idea_p1 {
+    forall i in added.idea, i.id = before.idea.count() and
+    added.idea.count() = 1
+  }
+}
+
+specification entry register(a_voter : address) {
+  fails {
+    register_f1 with (msg : string) :
+      msg = "InvalidState" and
+      state <> Activated;
+    register_f2 with (msg : string) :
+      msg = "InvalidCaller" and
+      caller <> chairman;
+    register_f3 with (msg : string) :
+      msg = "KeyAlreadyExists" and
+      voter.contains(a_voter);
+  }
+  postcondition register_p1 {
+    forall v in added.voter, v.addr = a_voter and
+    added.voter.count() = 1
+  }
+}
+
+specification entry vote (n : nat, weight : nat) {
+  fails {
+    f0 with (msg : string) :
+      msg = "GetNoneValue" and
+      (not voter.contains(caller) or not idea.contains(n));
+    f1 with (msg : string) :
+      let some v = voter[caller] in
+        v.remaining < weight
+      otherwise true;
+    f2 with (msg : string) :
+      msg = "InvalidState" and
+      state <> Activated;
+  }
+  postcondition p1 {
+    let some v = voter[caller] in
+    let some bv = before.voter[caller] in
+      v.remaining = bv.remaining - weight
+    otherwise true otherwise true
+  }
+  postcondition p2 {
+    let some i = idea[n] in
+    let some bi = before.idea[n] in
+      i.nbvotes = bi.nbvotes + weight
+    otherwise true otherwise true
+  }
+}
+
+specification entry terminate () {
+  postcondition p3 {
+    before.state = Activated ->
+    selected.count() <= 3
+  }
+  postcondition p4 {
+    before.state = Activated ->
+    forall s in selected,
+      let some i = idea[s.sid] in
+        i.nbvotes > maxvotes and
+        forall o in idea,
+          not selected.contains(o.id) ->
+          o.nbvotes <= i.nbvotes
+      otherwise false
   }
 }
