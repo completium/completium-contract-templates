@@ -18,7 +18,5 @@ github:
     addBadge: false
     # add a label once the prebuild is ready to pull requests (defaults to false)
     addLabel: false
-vscode:
-  extensions:
-    - edukera.archetype@0.38.0:BwtJ6rwGmyJfrcEVrjJcIA==
+
 
