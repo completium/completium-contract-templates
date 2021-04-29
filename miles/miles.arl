@@ -7,7 +7,7 @@ asset mile identified by id {
 }
 
 asset owner identified by addr {
-  addr  : role;
+  addr  : address;
   miles : partition<mile> = []
 }
 

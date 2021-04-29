@@ -1,6 +1,6 @@
 archetype zero_coupon_bond (
-  issuer : role,
-  subscriber : role,
+  issuer : address,
+  subscriber : address,
   facevalue : tez,
   discount : rational,
   maturityduration : duration,
