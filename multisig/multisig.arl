@@ -1,0 +1,86 @@
+archetype multisig(admin : address)
+
+variable required : nat = 5
+variable id_count : nat = 0
+
+variable max_duration : duration = 180d
+variable min_duration : duration = 1h
+
+asset manager {
+  addr : address
+}
+
+asset pending {
+  id      : nat;
+  expired : date;
+  //approve : set<pkey<manager>>;
+  approvals : set<address>;
+  actions   : lambda<unit, list<operation>>;
+}
+
+entry execute(proposal_id : nat) {
+  called by manager
+  require {
+    r0 : pending[proposal_id].expired < now;
+    r1 : length(pending[proposal_id].approvals) >= required otherwise "not-approved"
+  }
+  effect {
+    operations := exec_lambda(pending[proposal_id].actions, Unit);
+    pending.remove(proposal_id)
+  }
+}
+
+entry approve(proposal_id : nat) {
+  called by manager
+  effect {
+    if pending[proposal_id].expired < now then
+      pending.remove(proposal_id)
+    else
+      pending[proposal_id].approvals.add(caller)
+  }
+}
+
+entry propose(
+  actions_to_exec : lambda<unit, list<operation>>,
+  expired_duration : duration,
+  approved_by_caller : bool) {
+  called by manager
+  require {
+    r2 : min_duration <= expired_duration <= max_duration otherwise "wrong-duration"
+  }
+  effect {
+    var init_approvals : set<address> = [];
+    if approved_by_caller then
+      init_approvals.add(caller);
+    pending.add({
+      id_count;
+      (now + expired_duration);
+      init_approvals;
+      actions_to_exec
+    });
+    id_count += 1;
+  }
+}
+
+entry control(maddr : address, allowed : bool) {
+  called by admin
+  require {
+    r3 : allowed <> manager.contains(maddr)
+  }
+  effect {
+    if allowed then
+      manager.add({ maddr })
+    else
+      manager.remove(maddr)
+  }
+}
+
+entry %require(new_required : nat) {
+  called by admin
+  require {
+    r4 : 0 < new_required <= manager.count()
+  }
+  effect {
+    required := new_required
+  }
+}
