@@ -1,7 +1,7 @@
 archetype escrow(
-seller       : role,
-buyer        : role,
-taxcollector : role,
+seller       : address,
+buyer        : address,
+taxcollector : address,
 price        : tez,
 taxrate      : rational,
 securityrate : rational,

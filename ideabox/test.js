@@ -1,5 +1,5 @@
 const assert     = require('assert');
-const Completium = require('/home/guillaume/archetype/completium-cli');
+const Completium = require('@completium/completium-cli');
 
 const test = async () => {
   const completium = new Completium ();

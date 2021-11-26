@@ -1,7 +1,7 @@
 archetype autocallable(
-  issuer  : role,
-  holder  : role,
-  oracle  : role,
+  issuer  : address,
+  holder  : address,
+  oracle  : address,
   nominal : tez,
   trade   : date,
   final   : date,
